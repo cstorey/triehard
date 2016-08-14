@@ -1,6 +1,9 @@
 [package]
+authors = ["Ceri Storey <cez@necrofish.org.uk>"]
 name = "triehard"
 version = "0.1.0"
-authors = ["Ceri Storey <cez@necrofish.org.uk>"]
 
 [dependencies]
+env_logger = "*"
+log = "*"
+quickcheck = "*"
