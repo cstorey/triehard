@@ -19,68 +19,70 @@ pub enum Trie<T> {
     Empty,
     // Key * T
     Lf (u64, T),
-    // Depth * Key * left * right
-    Br (usize, u64, Rc<Trie<T>>, Rc<Trie<T>>),
+    // Prefix * Mask * left * right
+    Br (u64, u64, Rc<Trie<T>>, Rc<Trie<T>>),
 }
 
 impl<T:Clone+fmt::Debug> Trie<T> {
-    fn ins(&mut self, key: u64, val: T) {
-        println!("#insert: {:?} <- {:?}={:?}", self, key, val);
-        match &mut *self {
-            me@&mut Trie::Empty => *me = Trie::Lf(key, val),
-            &mut Trie::Lf(k, ref mut v) if k == key => *v = val,
-            me@&mut Trie::Lf(_, _) => {
-                if let Trie::Lf(k, v) = mem::replace(me, Trie::Empty) {
-                    let pfx = Self::mask(key , d);
-                    let oldleaf = Trie::Lf(k, v);
-                    let leftp = Self::zerobit(key, d);
-                    println!("leftp? {:?}@{:?} -> {:?}", key, d, leftp);
-                    let mut new : Self = if leftp {
-                        Trie::Br(d, pfx, Rc::new(oldleaf), Rc::new(Trie::Empty))
-                    } else {
-                        Trie::Br(d, pfx, Rc::new(Trie::Empty), Rc::new(oldleaf))
-                    };
-                    println!("#insert/split: -> {:?}", new);
-                    new.ins(key, val);
-                    println!("#insert/done: -> {:?}", new);
-                    mem::replace(me, new);
-                } else {
-                    unreachable!()
-                };
+    fn ins(&self, key: u64, val: T) -> Self {
+        debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
+        let new = match &*self {
+            &Trie::Empty => Trie::Lf(key, val),
+            &Trie::Lf(k, ref v) if k == key => Trie::Lf(key, val),
+            &Trie::Lf(j, ref y) => {
+                Self::join(key, Trie::Lf(key, val), j, self.clone())
             },
-            &mut Trie::Br(depth, _pfx, ref mut l, ref mut r) => {
-                let leftp = Self::zerobit(key, depth);
-                let child = if leftp {
-                    Rc::make_mut(l)
+            &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(key, p, m) => {
+                let leftp = Self::zerobit(key, m);
+                debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
+                if leftp {
+                    Trie::Br(p, m, Rc::new(l.ins(key, val)), r.clone())
                 } else {
-                    Rc::make_mut(r)
-                };
-                println!("insert/child: left? {:?}; into:{:?}", leftp, child);
-                child.ins(key, val)
-            }
+                    Trie::Br(p, m, l.clone(), Rc::new(r.ins(key, val)))
+                }
+            },
+            &Trie::Br(p, m, ref l, ref r) => {
+                Self::join(key, Trie::Lf(key, val), p, self.clone())
+            },
         };
-        println!("#inserted: {:?}", self);
+        debug!("#inserted: {:?}", new);
+        new
     }
 
-    fn zerobit(key: u64, pos: usize) -> bool {
-        key & (1<<pos) != 0
+    fn zerobit(key: u64, msk: u64) -> bool {
+        key & msk == 0
     }
-    fn mask(key: u64, pos: usize) -> u64 {
-        let mask = (1<<d)-1;
+    fn mask(key: u64, msk: u64) -> u64 {
+        let mask = msk-1;
         key & mask
     }
-    fn branch_bit(a: u64, b: u64) -> usize {
+    fn branch_bit(a: u64, b: u64) -> u64 {
         let diff = a ^ b;
-        
+        let bb = diff & (!diff+1);
+        debug!("branch_bit: a:{:#b}; b:{:#b}; diff:{:#b}; bb:{:#b}",
+            a, b, diff, bb);
+        assert_eq!(bb.count_ones(), 1);
+        assert_eq!(Self::mask(a, bb), Self::mask(b, bb));
+
+        bb
     }
 
-    fn join(self, p0:u64, other: Self, p1:u64) -> Self {
+    fn join(p0:u64, t0:Self, p1:u64, t1:Self) -> Self {
+        debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, t0, p1, t1);
         let m = Self::branch_bit(p0, p1);
-        if Self::zerobit(p0, m) {
-            Trie::Br(m, Self::mask(p0, m), Rc::new(self), Rc::new(other))
+        debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
+        let ret = if Self::zerobit(p0, m) {
+            Trie::Br(Self::mask(p0, m), m, Rc::new(t0), Rc::new(t1))
         } else {
-            Trie::Br(m, Self::mask(p0, m), Rc::new(other), Rc::new(self))
-        }
+            Trie::Br(Self::mask(p0, m), m, Rc::new(t1), Rc::new(t0))
+        };
+
+        debug!("join: => {:?}", ret );
+        ret
+    }
+
+    fn match_prefix(k:u64, p:u64, m:u64) -> bool {
+        Self::mask(k, m) == p
     }
 }
 
@@ -90,20 +92,22 @@ impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
         Trie::Empty
     }
     fn insert(&mut self, key: Self::K, val: T) {
-        self.ins(key, val)
+        let new = self.ins(key, val);
+        *self = new;
     }
     fn lookup(&self, key: &Self::K) -> Option<&T> {
-        println!("#lookup: {:?} <- {:?}", self, key);
+        debug!("#lookup: {:?} <- {:#b}", self, key);
         match self {
             &Trie::Empty => None,
             &Trie::Lf(k, ref v) if k == *key => Some(v),
             &Trie::Lf(k, _) => None,
-            &Trie::Br(_pfx, ref l, ref r) => 
-                if Self::zerobit(*key, depth) {
-                    l.lookup(key)
-                } else {
-                    r.lookup(key)
-                },
+            &Trie::Br(p, m, _, _) if !Self::match_prefix(*key, p, m) => None,
+            &Trie::Br(p, m, ref l, ref r) => {
+                let leftp = Self::zerobit(*key, m);
+                let branch = if leftp { l } else { r };
+                debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, branch);
+                branch.lookup(key)
+            }
         }
     }
 }
@@ -125,10 +129,10 @@ mod tests {
                 d.insert(k, k);
                 m.insert(k, k);
             }
-            println!("m: {:?}; d: {:?}", m, d);
+            debug!("m: {:?}; d: {:?}", m, d);
             let mres = m.get(&probe);
             let res = d.lookup(&probe);
-            println!("eq? {:?}", res == mres);
+            debug!("eq? {:?}", res == mres);
             assert_eq!(res, mres);
         }
         quickcheck::quickcheck(prop_works as fn(Vec<u64>, u64) -> ());
