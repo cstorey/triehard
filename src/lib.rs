@@ -9,7 +9,7 @@ trait Dict<T> {
 
     fn empty() -> Self;
     fn insert(&mut self, key: Self::K, val: T);
-    fn remove(&mut self, key: &Self::K);
+    fn remove(&mut self, key: &Self::K) -> Option<T>;
     fn lookup(&self, key: &Self::K) -> Option<&T>;
 }
 
@@ -48,23 +48,27 @@ impl<T:Clone+fmt::Debug> Trie<T> {
         new
     }
 
-    fn del(&self, key: &u64) -> Self {
+    fn del(&self, key: &u64) -> (Self, Option<T>) {
         debug!("#delert: {:?} <- {:?}", self, key);
         let new = match &*self {
-            &Trie::Empty => Trie::Empty,
-            &Trie::Lf(k, _) if &k == key => Trie::Empty,
-            &Trie::Lf(j, _) => self.clone(),
+            &Trie::Empty => (Trie::Empty, None),
+            &Trie::Lf(k, ref val) if &k == key => (Trie::Empty, Some(val.clone())),
+            &Trie::Lf(j, _) => (self.clone(), None),
             &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(*key, p, m) => {
                 let leftp = Self::zerobit(*key, m);
                 debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
                 if leftp {
-                    Self::br(p, m, Rc::new(l.del(key)), r.clone())
+                    let (left, removed) = l.del(key);
+                    let new = Self::br(p, m, Rc::new(left), r.clone());
+                    (new, removed)
                 } else {
-                    Self::br(p, m, l.clone(), Rc::new(r.del(key)))
+                    let (right, removed) = r.del(key);
+                    let new = Self::br(p, m, l.clone(), Rc::new(right));
+                    (new, removed)
                 }
             },
             &Trie::Br(p, _, _, _) => {
-                self.clone()
+                (self.clone(), None)
             },
         };
         debug!("#delerted: {:?}", new);
@@ -140,9 +144,10 @@ impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
             }
         }
     }
-    fn remove(&mut self, key: &Self::K) {
-        let new = self.del(key);
+    fn remove(&mut self, key: &Self::K) -> Option<T> {
+        let (new, removed) = self.del(key);
         *self = new;
+        removed
     }
 }
 
@@ -184,16 +189,19 @@ mod tests {
                 m.insert(k, v);
             }
             debug!("m: {:?}; d: {:?}", m, d);
+            let mut ours = Vec::new();
+            let mut theirs = Vec::new();
             for k in remove {
-                d.remove(&k);
-                m.remove(&k);
+                ours.push(d.remove(&k));
+                theirs.push( m.remove(&k));
             }
 
             let mres = m.get(&probe);
             let res = d.lookup(&probe);
             debug!("eq? {:?}", res == mres);
+            debug!("removed {:?} == {:?} -> {:?}", ours, theirs, ours == theirs);
             debug!("");
-            assert_eq!(res, mres);
+            assert_eq!((res, ours), (mres, theirs));
         }
         quickcheck::quickcheck(prop_works as fn(Vec<(u64, u64)>, Vec<u64>, u64) -> ());
     }
