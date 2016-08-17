@@ -35,9 +35,9 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                 let leftp = Self::zerobit(key, m);
                 debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
                 if leftp {
-                    Trie::Br(p, m, Rc::new(l.ins(key, val)), r.clone())
+                    Self::br(p, m, Rc::new(l.ins(key, val)), r.clone())
                 } else {
-                    Trie::Br(p, m, l.clone(), Rc::new(r.ins(key, val)))
+                    Self::br(p, m, l.clone(), Rc::new(r.ins(key, val)))
                 }
             },
             &Trie::Br(p, _, _, _) => {
@@ -58,9 +58,9 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                 let leftp = Self::zerobit(*key, m);
                 debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
                 if leftp {
-                    Trie::Br(p, m, Rc::new(l.del(key)), r.clone())
+                    Self::br(p, m, Rc::new(l.del(key)), r.clone())
                 } else {
-                    Trie::Br(p, m, l.clone(), Rc::new(r.del(key)))
+                    Self::br(p, m, l.clone(), Rc::new(r.del(key)))
                 }
             },
             &Trie::Br(p, _, _, _) => {
@@ -94,9 +94,9 @@ impl<T:Clone+fmt::Debug> Trie<T> {
         let m = Self::branch_bit(p0, p1);
         debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
         let ret = if Self::zerobit(p0, m) {
-            Trie::Br(Self::mask(p0, m), m, Rc::new(t0), Rc::new(t1))
+            Self::br(Self::mask(p0, m), m, Rc::new(t0), Rc::new(t1))
         } else {
-            Trie::Br(Self::mask(p0, m), m, Rc::new(t1), Rc::new(t0))
+            Self::br(Self::mask(p0, m), m, Rc::new(t1), Rc::new(t0))
         };
 
         debug!("join: => {:?}", ret );
@@ -105,6 +105,14 @@ impl<T:Clone+fmt::Debug> Trie<T> {
 
     fn match_prefix(k:u64, p:u64, m:u64) -> bool {
         Self::mask(k, m) == p
+    }
+    fn br(prefix: u64, mask: u64, left: Rc<Trie<T>>, right: Rc<Trie<T>>) -> Self {
+        match (&*left, &*right) {
+            (&Trie::Empty, &Trie::Empty) => Trie::Empty,
+            (&Trie::Empty, _) => (*right).clone(),
+            (_, &Trie::Empty) => (*left).clone(),
+            (_, _) => Trie::Br(prefix, mask, left, right)
+        }
     }
 }
 
