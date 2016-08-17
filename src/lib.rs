@@ -4,7 +4,7 @@ use std::fmt;
 #[macro_use]
 extern crate log;
 
-trait Dict<T> {
+pub trait Dict<T> {
     type K;
 
     fn empty() -> Self;
@@ -24,7 +24,7 @@ pub enum Trie<T> {
 
 impl<T:Clone+fmt::Debug> Trie<T> {
     fn ins(&self, key: u64, val: T) -> Self {
-        debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
+        // debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
         let new = match &*self {
             &Trie::Empty => Trie::Lf(key, val),
             &Trie::Lf(k, _) if k == key => Trie::Lf(key, val),
@@ -33,7 +33,7 @@ impl<T:Clone+fmt::Debug> Trie<T> {
             },
             &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(key, p, m) => {
                 let leftp = Self::zerobit(key, m);
-                debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
+                // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
                 if leftp {
                     Self::br(p, m, Rc::new(l.ins(key, val)), r.clone())
                 } else {
@@ -44,19 +44,19 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                 Self::join(key, Trie::Lf(key, val), p, self.clone())
             },
         };
-        debug!("#inserted: {:?}", new);
+        // debug!("#inserted: {:?}", new);
         new
     }
 
     fn del(&self, key: &u64) -> (Self, Option<T>) {
-        debug!("#delert: {:?} <- {:?}", self, key);
+        // debug!("#delert: {:?} <- {:?}", self, key);
         let new = match &*self {
             &Trie::Empty => (Trie::Empty, None),
             &Trie::Lf(k, ref val) if &k == key => (Trie::Empty, Some(val.clone())),
             &Trie::Lf(j, _) => (self.clone(), None),
             &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(*key, p, m) => {
                 let leftp = Self::zerobit(*key, m);
-                debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
+                // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
                 if leftp {
                     let (left, removed) = l.del(key);
                     let new = Self::br(p, m, Rc::new(left), r.clone());
@@ -71,7 +71,7 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                 (self.clone(), None)
             },
         };
-        debug!("#delerted: {:?}", new);
+        // debug!("#delerted: {:?}", new);
         new
     }
 
@@ -85,8 +85,7 @@ impl<T:Clone+fmt::Debug> Trie<T> {
     fn branch_bit(a: u64, b: u64) -> u64 {
         let diff = a ^ b;
         let bb = diff & (!diff+1);
-        debug!("branch_bit: a:{:#b}; b:{:#b}; diff:{:#b}; bb:{:#b}",
-            a, b, diff, bb);
+        // debug!("branch_bit: a:{:#b}; b:{:#b}; diff:{:#b}; bb:{:#b}", a, b, diff, bb);
         assert_eq!(bb.count_ones(), 1);
         assert_eq!(Self::mask(a, bb), Self::mask(b, bb));
 
@@ -94,16 +93,16 @@ impl<T:Clone+fmt::Debug> Trie<T> {
     }
 
     fn join(p0:u64, t0:Self, p1:u64, t1:Self) -> Self {
-        debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, t0, p1, t1);
+        // debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, t0, p1, t1);
         let m = Self::branch_bit(p0, p1);
-        debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
+        // debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
         let ret = if Self::zerobit(p0, m) {
             Self::br(Self::mask(p0, m), m, Rc::new(t0), Rc::new(t1))
         } else {
             Self::br(Self::mask(p0, m), m, Rc::new(t1), Rc::new(t0))
         };
 
-        debug!("join: => {:?}", ret );
+        // debug!("join: => {:?}", ret );
         ret
     }
 
@@ -130,7 +129,7 @@ impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
         *self = new;
     }
     fn lookup(&self, key: &Self::K) -> Option<&T> {
-        debug!("#lookup: {:?} <- {:#b}", self, key);
+        // debug!("#lookup: {:?} <- {:#b}", self, key);
         match self {
             &Trie::Empty => None,
             &Trie::Lf(k, ref v) if k == *key => Some(v),
@@ -139,7 +138,7 @@ impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
             &Trie::Br(_, m, ref l, ref r) => {
                 let leftp = Self::zerobit(*key, m);
                 let branch = if leftp { l } else { r };
-                debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, branch);
+                // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, branch);
                 branch.lookup(key)
             }
         }

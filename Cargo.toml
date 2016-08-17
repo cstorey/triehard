@@ -7,3 +7,11 @@ version = "0.1.0"
 env_logger = "*"
 log = "*"
 quickcheck = "*"
+
+[dev-dependencies]
+rand = "0.3.14"
+
+[profile.bench]
+debug = true
+[profile.release]
+debug = true
