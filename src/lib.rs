@@ -1,6 +1,5 @@
 // mod ptrs;
 use std::rc::Rc;
-use std::mem;
 use std::fmt;
 #[macro_use]
 extern crate log;
@@ -28,8 +27,8 @@ impl<T:Clone+fmt::Debug> Trie<T> {
         debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
         let new = match &*self {
             &Trie::Empty => Trie::Lf(key, val),
-            &Trie::Lf(k, ref v) if k == key => Trie::Lf(key, val),
-            &Trie::Lf(j, ref y) => {
+            &Trie::Lf(k, _) if k == key => Trie::Lf(key, val),
+            &Trie::Lf(j, _) => {
                 Self::join(key, Trie::Lf(key, val), j, self.clone())
             },
             &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(key, p, m) => {
@@ -41,7 +40,7 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                     Trie::Br(p, m, l.clone(), Rc::new(r.ins(key, val)))
                 }
             },
-            &Trie::Br(p, m, ref l, ref r) => {
+            &Trie::Br(p, _, _, _) => {
                 Self::join(key, Trie::Lf(key, val), p, self.clone())
             },
         };
@@ -100,9 +99,9 @@ impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
         match self {
             &Trie::Empty => None,
             &Trie::Lf(k, ref v) if k == *key => Some(v),
-            &Trie::Lf(k, _) => None,
+            &Trie::Lf(_, _) => None,
             &Trie::Br(p, m, _, _) if !Self::match_prefix(*key, p, m) => None,
-            &Trie::Br(p, m, ref l, ref r) => {
+            &Trie::Br(_, m, ref l, ref r) => {
                 let leftp = Self::zerobit(*key, m);
                 let branch = if leftp { l } else { r };
                 debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, branch);
@@ -122,12 +121,12 @@ mod tests {
     #[test]
     fn it_works() {
         env_logger::init().unwrap_or(());
-        fn prop_works(insert: Vec<u64>, probe: u64) -> () {
+        fn prop_works(insert: Vec<(u64,u64)>, probe: u64) -> () {
             let mut d = Trie::empty();
             let mut m = BTreeMap::new();
-            for k in insert {
-                d.insert(k, k);
-                m.insert(k, k);
+            for (k,v) in insert {
+                d.insert(k, v);
+                m.insert(k, v);
             }
             debug!("m: {:?}; d: {:?}", m, d);
             let mres = m.get(&probe);
@@ -135,6 +134,6 @@ mod tests {
             debug!("eq? {:?}", res == mres);
             assert_eq!(res, mres);
         }
-        quickcheck::quickcheck(prop_works as fn(Vec<u64>, u64) -> ());
+        quickcheck::quickcheck(prop_works as fn(Vec<(u64, u64)>, u64) -> ());
     }
 }
