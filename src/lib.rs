@@ -1,5 +1,4 @@
 // mod ptrs;
-use std::rc::Rc;
 use std::fmt;
 #[macro_use]
 extern crate log;
@@ -19,35 +18,36 @@ pub enum Trie<T> {
     // Key * T
     Lf (u64, T),
     // Prefix * Mask * left * right
-    Br (u64, u64, Rc<Trie<T>>, Rc<Trie<T>>),
+    Br (u64, u64, Box<Trie<T>>, Box<Trie<T>>),
 }
 
 impl<T:Clone+fmt::Debug> Trie<T> {
     fn ins(&mut self, key: u64, val: T) {
         // debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
         let new = match self {
-            &mut Trie::Empty => Trie::Lf(key, val),
-            &mut Trie::Lf(k, _) if k == key => Trie::Lf(key, val),
+            &mut Trie::Empty => Some(Trie::Lf(key, val)),
+            &mut Trie::Lf(k, ref mut v) if k == key => { *v = val; None },
             &mut Trie::Lf(j, _) => {
-                Self::join(key, Trie::Lf(key, val), j, self.clone())
+                Some(Self::join(key, Trie::Lf(key, val), j, self.clone()))
             },
             &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(key, p, m) => {
                 let leftp = Self::zerobit(key, m);
                 // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { &*l } else { &*r });
                 if leftp {
-                    Rc::make_mut(l).ins(key, val);
-                    Trie::Br(p, m, l.clone(), r.clone())
+                    l.ins(key, val);
                 } else {
-                    Rc::make_mut(r).ins(key, val);
-                    Trie::Br(p, m, l.clone(), r.clone())
-                }
+                    r.ins(key, val);
+                };
+                None
             },
             &mut Trie::Br(p, _, _, _) => {
-                Self::join(key, Trie::Lf(key, val), p, self.clone())
+                Some(Self::join(key, Trie::Lf(key, val), p, self.clone()))
             },
         };
         // debug!("#inserted: {:?}", new);
-        *self = new
+        if let Some(new) = new {
+            *self = new
+        }
     }
 
     fn del(&self, key: &u64) -> (Self, Option<T>) {
@@ -61,11 +61,11 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                 // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
                 if leftp {
                     let (left, removed) = l.del(key);
-                    let new = Self::br(p, m, Rc::new(left), r.clone());
+                    let new = Self::br(p, m, Box::new(left), r.clone());
                     (new, removed)
                 } else {
                     let (right, removed) = r.del(key);
-                    let new = Self::br(p, m, l.clone(), Rc::new(right));
+                    let new = Self::br(p, m, l.clone(), Box::new(right));
                     (new, removed)
                 }
             },
@@ -99,9 +99,9 @@ impl<T:Clone+fmt::Debug> Trie<T> {
         let m = Self::branch_bit(p0, p1);
         // debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
         let ret = if Self::zerobit(p0, m) {
-            Self::br(Self::mask(p0, m), m, Rc::new(t0), Rc::new(t1))
+            Self::br(Self::mask(p0, m), m, Box::new(t0), Box::new(t1))
         } else {
-            Self::br(Self::mask(p0, m), m, Rc::new(t1), Rc::new(t0))
+            Self::br(Self::mask(p0, m), m, Box::new(t1), Box::new(t0))
         };
 
         // debug!("join: => {:?}", ret );
@@ -111,11 +111,11 @@ impl<T:Clone+fmt::Debug> Trie<T> {
     fn match_prefix(k:u64, p:u64, m:u64) -> bool {
         Self::mask(k, m) == p
     }
-    fn br(prefix: u64, mask: u64, left: Rc<Trie<T>>, right: Rc<Trie<T>>) -> Self {
+    fn br(prefix: u64, mask: u64, left: Box<Trie<T>>, right: Box<Trie<T>>) -> Self {
         match (&*left, &*right) {
             (&Trie::Empty, &Trie::Empty) => Trie::Empty,
-            (&Trie::Empty, _) => (*right).clone(),
-            (_, &Trie::Empty) => (*left).clone(),
+            (&Trie::Empty, _) => *right,
+            (_, &Trie::Empty) => *left,
             (_, _) => Trie::Br(prefix, mask, left, right)
         }
     }
