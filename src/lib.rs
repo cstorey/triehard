@@ -23,29 +23,31 @@ pub enum Trie<T> {
 }
 
 impl<T:Clone+fmt::Debug> Trie<T> {
-    fn ins(&self, key: u64, val: T) -> Self {
+    fn ins(&mut self, key: u64, val: T) {
         // debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
-        let new = match &*self {
-            &Trie::Empty => Trie::Lf(key, val),
-            &Trie::Lf(k, _) if k == key => Trie::Lf(key, val),
-            &Trie::Lf(j, _) => {
+        let new = match self {
+            &mut Trie::Empty => Trie::Lf(key, val),
+            &mut Trie::Lf(k, _) if k == key => Trie::Lf(key, val),
+            &mut Trie::Lf(j, _) => {
                 Self::join(key, Trie::Lf(key, val), j, self.clone())
             },
-            &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(key, p, m) => {
+            &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(key, p, m) => {
                 let leftp = Self::zerobit(key, m);
-                // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
+                // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { &*l } else { &*r });
                 if leftp {
-                    Self::br(p, m, Rc::new(l.ins(key, val)), r.clone())
+                    Rc::make_mut(l).ins(key, val);
+                    Trie::Br(p, m, l.clone(), r.clone())
                 } else {
-                    Self::br(p, m, l.clone(), Rc::new(r.ins(key, val)))
+                    Rc::make_mut(r).ins(key, val);
+                    Trie::Br(p, m, l.clone(), r.clone())
                 }
             },
-            &Trie::Br(p, _, _, _) => {
+            &mut Trie::Br(p, _, _, _) => {
                 Self::join(key, Trie::Lf(key, val), p, self.clone())
             },
         };
         // debug!("#inserted: {:?}", new);
-        new
+        *self = new
     }
 
     fn del(&self, key: &u64) -> (Self, Option<T>) {
@@ -125,8 +127,7 @@ impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
         Trie::Empty
     }
     fn insert(&mut self, key: Self::K, val: T) {
-        let new = self.ins(key, val);
-        *self = new;
+        self.ins(key, val);
     }
     fn lookup(&self, key: &Self::K) -> Option<&T> {
         // debug!("#lookup: {:?} <- {:#b}", self, key);
