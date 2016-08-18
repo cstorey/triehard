@@ -113,32 +113,33 @@ impl<T: fmt::Debug> Trie<T> {
             (_, _) => Trie::Br(prefix, mask, left, right),
         }
     }
-}
 
-impl<T: Clone + fmt::Debug> Trie<T> {
-    fn del(&self, key: &u64) -> (Self, Option<T>) {
+    fn del(&mut self, key: &u64) -> Option<T> {
         // debug!("#delert: {:?} <- {:?}", self, key);
-        let new = match &*self {
-            &Trie::Empty => (Trie::Empty, None),
-            &Trie::Lf(k, ref val) if &k == key => (Trie::Empty, Some(val.clone())),
-            &Trie::Lf(_, _) => (self.clone(), None),
-            &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(*key, p, m) => {
-                let leftp = Self::zerobit(*key, m);
-                // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
-                if leftp {
-                    let (left, removed) = l.del(key);
-                    let new = Self::br(p, m, Box::new(left), r.clone());
-                    (new, removed)
+        let removed = match self {
+            &mut Trie::Empty => None,
+            &mut Trie::Lf(_, _) if &self.prefix() == key => {
+                if let Trie::Lf(_, val) = mem::replace(self, Trie::Empty) {
+                    Some(val)
                 } else {
-                    let (right, removed) = r.del(key);
-                    let new = Self::br(p, m, l.clone(), Box::new(right));
-                    (new, removed)
+                    unreachable!()
                 }
             }
-            &Trie::Br(_, _, _, _) => (self.clone(), None),
+            &mut Trie::Lf(_, _) => None,
+            &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(*key, p, m) => {
+                let leftp = Self::zerobit(*key, m);
+                // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
+                let removed = if leftp {
+                    l.del(key)
+                } else {
+                    r.del(key)
+                };
+                removed
+            }
+            &mut Trie::Br(_, _, _, _) => None,
         };
         // debug!("#delerted: {:?}", new);
-        new
+        removed
     }
 }
 
@@ -170,8 +171,7 @@ impl<T: Clone + fmt::Debug> Dict<T> for Trie<T> {
         }
     }
     fn remove(&mut self, key: &Self::K) -> Option<T> {
-        let (new, removed) = self.del(key);
-        *self = new;
+        let removed = self.del(key);
         removed
     }
 }
