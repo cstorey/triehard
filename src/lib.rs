@@ -16,20 +16,21 @@ pub trait Dict<T> {
 pub enum Trie<T> {
     Empty,
     // Key * T
-    Lf (u64, T),
+    Lf(u64, T),
     // Prefix * Mask * left * right
-    Br (u64, u64, Box<Trie<T>>, Box<Trie<T>>),
+    Br(u64, u64, Box<Trie<T>>, Box<Trie<T>>),
 }
 
-impl<T:Clone+fmt::Debug> Trie<T> {
+impl<T: Clone + fmt::Debug> Trie<T> {
     fn ins(&mut self, key: u64, val: T) {
         // debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
         let new = match self {
             &mut Trie::Empty => Some(Trie::Lf(key, val)),
-            &mut Trie::Lf(k, ref mut v) if k == key => { *v = val; None },
-            &mut Trie::Lf(j, _) => {
-                Some(Self::join(key, Trie::Lf(key, val), j, self.clone()))
-            },
+            &mut Trie::Lf(k, ref mut v) if k == key => {
+                *v = val;
+                None
+            }
+            &mut Trie::Lf(j, _) => Some(Self::join(key, Trie::Lf(key, val), j, self.clone())),
             &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(key, p, m) => {
                 let leftp = Self::zerobit(key, m);
                 // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { &*l } else { &*r });
@@ -39,10 +40,8 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                     r.ins(key, val);
                 };
                 None
-            },
-            &mut Trie::Br(p, _, _, _) => {
-                Some(Self::join(key, Trie::Lf(key, val), p, self.clone()))
-            },
+            }
+            &mut Trie::Br(p, _, _, _) => Some(Self::join(key, Trie::Lf(key, val), p, self.clone())),
         };
         // debug!("#inserted: {:?}", new);
         if let Some(new) = new {
@@ -68,10 +67,8 @@ impl<T:Clone+fmt::Debug> Trie<T> {
                     let new = Self::br(p, m, l.clone(), Box::new(right));
                     (new, removed)
                 }
-            },
-            &Trie::Br(p, _, _, _) => {
-                (self.clone(), None)
-            },
+            }
+            &Trie::Br(p, _, _, _) => (self.clone(), None),
         };
         // debug!("#delerted: {:?}", new);
         new
@@ -81,12 +78,12 @@ impl<T:Clone+fmt::Debug> Trie<T> {
         key & msk == 0
     }
     fn mask(key: u64, msk: u64) -> u64 {
-        let mask = msk-1;
+        let mask = msk - 1;
         key & mask
     }
     fn branch_bit(a: u64, b: u64) -> u64 {
         let diff = a ^ b;
-        let bb = diff & (!diff+1);
+        let bb = diff & (!diff + 1);
         // debug!("branch_bit: a:{:#b}; b:{:#b}; diff:{:#b}; bb:{:#b}", a, b, diff, bb);
         assert_eq!(bb.count_ones(), 1);
         assert_eq!(Self::mask(a, bb), Self::mask(b, bb));
@@ -94,7 +91,7 @@ impl<T:Clone+fmt::Debug> Trie<T> {
         bb
     }
 
-    fn join(p0:u64, t0:Self, p1:u64, t1:Self) -> Self {
+    fn join(p0: u64, t0: Self, p1: u64, t1: Self) -> Self {
         // debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, t0, p1, t1);
         let m = Self::branch_bit(p0, p1);
         // debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
@@ -108,7 +105,7 @@ impl<T:Clone+fmt::Debug> Trie<T> {
         ret
     }
 
-    fn match_prefix(k:u64, p:u64, m:u64) -> bool {
+    fn match_prefix(k: u64, p: u64, m: u64) -> bool {
         Self::mask(k, m) == p
     }
     fn br(prefix: u64, mask: u64, left: Box<Trie<T>>, right: Box<Trie<T>>) -> Self {
@@ -116,12 +113,12 @@ impl<T:Clone+fmt::Debug> Trie<T> {
             (&Trie::Empty, &Trie::Empty) => Trie::Empty,
             (&Trie::Empty, _) => *right,
             (_, &Trie::Empty) => *left,
-            (_, _) => Trie::Br(prefix, mask, left, right)
+            (_, _) => Trie::Br(prefix, mask, left, right),
         }
     }
 }
 
-impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
+impl<T: Clone + fmt::Debug> Dict<T> for Trie<T> {
     type K = u64;
     fn empty() -> Self {
         Trie::Empty
@@ -138,7 +135,11 @@ impl<T:Clone+fmt::Debug> Dict<T> for Trie<T> {
             &Trie::Br(p, m, _, _) if !Self::match_prefix(*key, p, m) => None,
             &Trie::Br(_, m, ref l, ref r) => {
                 let leftp = Self::zerobit(*key, m);
-                let branch = if leftp { l } else { r };
+                let branch = if leftp {
+                    l
+                } else {
+                    r
+                };
                 // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, branch);
                 branch.lookup(key)
             }
@@ -156,15 +157,15 @@ mod tests {
     extern crate quickcheck;
     extern crate env_logger;
     use std::collections::BTreeMap;
-    use super::{Trie,Dict};
+    use super::{Trie, Dict};
 
     #[test]
     fn it_works() {
         env_logger::init().unwrap_or(());
-        fn prop_works(insert: Vec<(u64,u64)>, probe: u64) -> () {
+        fn prop_works(insert: Vec<(u64, u64)>, probe: u64) -> () {
             let mut d = Trie::empty();
             let mut m = BTreeMap::new();
-            for (k,v) in insert {
+            for (k, v) in insert {
                 d.insert(k, v);
                 m.insert(k, v);
             }
@@ -180,11 +181,11 @@ mod tests {
     #[test]
     fn should_add_remove() {
         env_logger::init().unwrap_or(());
-        fn prop_works(insert: Vec<(u64,u64)>, remove: Vec<u64>, probe: u64) -> () {
+        fn prop_works(insert: Vec<(u64, u64)>, remove: Vec<u64>, probe: u64) -> () {
             debug!("{:?}", (&insert, &remove, &probe));
             let mut d = Trie::empty();
             let mut m = BTreeMap::new();
-            for (k,v) in insert {
+            for (k, v) in insert {
                 d.insert(k, v);
                 m.insert(k, v);
             }
@@ -193,7 +194,7 @@ mod tests {
             let mut theirs = Vec::new();
             for k in remove {
                 ours.push(d.remove(&k));
-                theirs.push( m.remove(&k));
+                theirs.push(m.remove(&k));
             }
 
             let mres = m.get(&probe);
