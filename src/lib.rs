@@ -21,17 +21,30 @@ pub enum Trie<T> {
     Br(u64, u64, Box<Trie<T>>, Box<Trie<T>>),
 }
 
+// The trace! invocations end up with a grammar that matches: '^(e|B*[Llb])$'
+// start := empty | tree
+// empty := Empty
+// tree := Matching branch
+//
 impl<T: Clone + fmt::Debug> Trie<T> {
     fn ins(&mut self, key: u64, val: T) {
         // debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
         let new = match self {
-            &mut Trie::Empty => Some(Trie::Lf(key, val)),
+            &mut Trie::Empty => {
+                trace!("e");
+                Some(Trie::Lf(key, val))
+            }
             &mut Trie::Lf(k, ref mut v) if k == key => {
+                trace!("L");
                 *v = val;
                 None
             }
-            &mut Trie::Lf(j, _) => Some(Self::join(key, Trie::Lf(key, val), j, self.clone())),
+            &mut Trie::Lf(_, _) => {
+                trace!("l");
+                Some(Self::join(Trie::Lf(key, val), self.clone()))
+            }
             &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(key, p, m) => {
+                trace!("B");
                 let leftp = Self::zerobit(key, m);
                 // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { &*l } else { &*r });
                 if leftp {
@@ -41,7 +54,10 @@ impl<T: Clone + fmt::Debug> Trie<T> {
                 };
                 None
             }
-            &mut Trie::Br(p, _, _, _) => Some(Self::join(key, Trie::Lf(key, val), p, self.clone())),
+            &mut Trie::Br(_, _, _, _) => {
+                trace!("b");
+                Some(Self::join(Trie::Lf(key, val), self.clone()))
+            }
         };
         // debug!("#inserted: {:?}", new);
         if let Some(new) = new {
@@ -54,7 +70,7 @@ impl<T: Clone + fmt::Debug> Trie<T> {
         let new = match &*self {
             &Trie::Empty => (Trie::Empty, None),
             &Trie::Lf(k, ref val) if &k == key => (Trie::Empty, Some(val.clone())),
-            &Trie::Lf(j, _) => (self.clone(), None),
+            &Trie::Lf(_, _) => (self.clone(), None),
             &Trie::Br(p, m, ref l, ref r) if Self::match_prefix(*key, p, m) => {
                 let leftp = Self::zerobit(*key, m);
                 // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
@@ -68,7 +84,7 @@ impl<T: Clone + fmt::Debug> Trie<T> {
                     (new, removed)
                 }
             }
-            &Trie::Br(p, _, _, _) => (self.clone(), None),
+            &Trie::Br(_, _, _, _) => (self.clone(), None),
         };
         // debug!("#delerted: {:?}", new);
         new
@@ -91,8 +107,10 @@ impl<T: Clone + fmt::Debug> Trie<T> {
         bb
     }
 
-    fn join(p0: u64, t0: Self, p1: u64, t1: Self) -> Self {
+    fn join(t0: Self, t1: Self) -> Self {
         // debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, t0, p1, t1);
+        let p0 = t0.prefix();
+        let p1 = t1.prefix();
         let m = Self::branch_bit(p0, p1);
         // debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
         let ret = if Self::zerobit(p0, m) {
@@ -103,6 +121,14 @@ impl<T: Clone + fmt::Debug> Trie<T> {
 
         // debug!("join: => {:?}", ret );
         ret
+    }
+
+    fn prefix(&self) -> u64 {
+        match self {
+            &Trie::Empty => 0,
+            &Trie::Lf(k, _) => k,
+            &Trie::Br(p, _, _, _) => p,
+        }
     }
 
     fn match_prefix(k: u64, p: u64, m: u64) -> bool {
@@ -166,6 +192,7 @@ mod tests {
             let mut d = Trie::empty();
             let mut m = BTreeMap::new();
             for (k, v) in insert {
+                println!("");
                 d.insert(k, v);
                 m.insert(k, v);
             }
