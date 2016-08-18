@@ -1,5 +1,6 @@
 // mod ptrs;
 use std::fmt;
+use std::mem;
 #[macro_use]
 extern crate log;
 
@@ -26,7 +27,7 @@ pub enum Trie<T> {
 // empty := Empty
 // tree := Matching branch
 //
-impl<T: Clone + fmt::Debug> Trie<T> {
+impl<T: fmt::Debug> Trie<T> {
     fn ins(&mut self, key: u64, val: T) {
         // debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
         match self {
@@ -40,8 +41,7 @@ impl<T: Clone + fmt::Debug> Trie<T> {
             }
             &mut Trie::Lf(_, _) => {
                 trace!("l");
-                let new = self.clone().join(Trie::Lf(key, val));
-                *self = new;
+                self.join(Trie::Lf(key, val));
             }
             &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(key, p, m) => {
                 trace!("B");
@@ -55,12 +55,67 @@ impl<T: Clone + fmt::Debug> Trie<T> {
             }
             &mut Trie::Br(_, _, _, _) => {
                 trace!("b");
-                *self = self.clone().join(Trie::Lf(key, val));
+                self.join(Trie::Lf(key, val));
             }
         };
         // debug!("#inserted: {:?}", new);
     }
 
+    fn zerobit(key: u64, msk: u64) -> bool {
+        key & msk == 0
+    }
+    fn mask(key: u64, msk: u64) -> u64 {
+        let mask = msk - 1;
+        key & mask
+    }
+    fn branch_bit(a: u64, b: u64) -> u64 {
+        let diff = a ^ b;
+        let bb = diff & (!diff + 1);
+        // debug!("branch_bit: a:{:#b}; b:{:#b}; diff:{:#b}; bb:{:#b}", a, b, diff, bb);
+        assert_eq!(bb.count_ones(), 1);
+        assert_eq!(Self::mask(a, bb), Self::mask(b, bb));
+
+        bb
+    }
+
+    fn join(&mut self, t1: Self) {
+        // debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, self, p1, t1);
+        let t0 = mem::replace(self, Trie::Empty);
+        let p0 = t0.prefix();
+        let p1 = t1.prefix();
+        let m = Self::branch_bit(p0, p1);
+        // debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
+        if Self::zerobit(p0, m) {
+            *self = Self::br(Self::mask(p0, m), m, Box::new(t0), Box::new(t1))
+        } else {
+            *self = Self::br(Self::mask(p0, m), m, Box::new(t1), Box::new(t0))
+        };
+
+        // debug!("join: => {:?}", self );
+    }
+
+    fn prefix(&self) -> u64 {
+        match self {
+            &Trie::Empty => 0,
+            &Trie::Lf(k, _) => k,
+            &Trie::Br(p, _, _, _) => p,
+        }
+    }
+
+    fn match_prefix(k: u64, p: u64, m: u64) -> bool {
+        Self::mask(k, m) == p
+    }
+    fn br(prefix: u64, mask: u64, left: Box<Trie<T>>, right: Box<Trie<T>>) -> Self {
+        match (&*left, &*right) {
+            (&Trie::Empty, &Trie::Empty) => Trie::Empty,
+            (&Trie::Empty, _) => *right,
+            (_, &Trie::Empty) => *left,
+            (_, _) => Trie::Br(prefix, mask, left, right),
+        }
+    }
+}
+
+impl<T: Clone + fmt::Debug> Trie<T> {
     fn del(&self, key: &u64) -> (Self, Option<T>) {
         // debug!("#delert: {:?} <- {:?}", self, key);
         let new = match &*self {
@@ -84,59 +139,6 @@ impl<T: Clone + fmt::Debug> Trie<T> {
         };
         // debug!("#delerted: {:?}", new);
         new
-    }
-
-    fn zerobit(key: u64, msk: u64) -> bool {
-        key & msk == 0
-    }
-    fn mask(key: u64, msk: u64) -> u64 {
-        let mask = msk - 1;
-        key & mask
-    }
-    fn branch_bit(a: u64, b: u64) -> u64 {
-        let diff = a ^ b;
-        let bb = diff & (!diff + 1);
-        // debug!("branch_bit: a:{:#b}; b:{:#b}; diff:{:#b}; bb:{:#b}", a, b, diff, bb);
-        assert_eq!(bb.count_ones(), 1);
-        assert_eq!(Self::mask(a, bb), Self::mask(b, bb));
-
-        bb
-    }
-
-    fn join(self, t1: Self) -> Self {
-        // debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, self, p1, t1);
-        let p0 = self.prefix();
-        let p1 = t1.prefix();
-        let m = Self::branch_bit(p0, p1);
-        // debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
-        let ret = if Self::zerobit(p0, m) {
-            Self::br(Self::mask(p0, m), m, Box::new(self), Box::new(t1))
-        } else {
-            Self::br(Self::mask(p0, m), m, Box::new(t1), Box::new(self))
-        };
-
-        // debug!("join: => {:?}", ret );
-        ret
-    }
-
-    fn prefix(&self) -> u64 {
-        match self {
-            &Trie::Empty => 0,
-            &Trie::Lf(k, _) => k,
-            &Trie::Br(p, _, _, _) => p,
-        }
-    }
-
-    fn match_prefix(k: u64, p: u64, m: u64) -> bool {
-        Self::mask(k, m) == p
-    }
-    fn br(prefix: u64, mask: u64, left: Box<Trie<T>>, right: Box<Trie<T>>) -> Self {
-        match (&*left, &*right) {
-            (&Trie::Empty, &Trie::Empty) => Trie::Empty,
-            (&Trie::Empty, _) => *right,
-            (_, &Trie::Empty) => *left,
-            (_, _) => Trie::Br(prefix, mask, left, right),
-        }
     }
 }
 
