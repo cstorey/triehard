@@ -29,19 +29,19 @@ pub enum Trie<T> {
 impl<T: Clone + fmt::Debug> Trie<T> {
     fn ins(&mut self, key: u64, val: T) {
         // debug!("#insert: {:?} <- {:?}={:?}", self, key, val);
-        let new = match self {
+        match self {
             &mut Trie::Empty => {
                 trace!("e");
-                Some(Trie::Lf(key, val))
+                *self = Trie::Lf(key, val);
             }
             &mut Trie::Lf(k, ref mut v) if k == key => {
                 trace!("L");
                 *v = val;
-                None
             }
             &mut Trie::Lf(_, _) => {
                 trace!("l");
-                Some(Self::join(Trie::Lf(key, val), self.clone()))
+                let new = self.clone().join(Trie::Lf(key, val));
+                *self = new;
             }
             &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(key, p, m) => {
                 trace!("B");
@@ -52,17 +52,13 @@ impl<T: Clone + fmt::Debug> Trie<T> {
                 } else {
                     r.ins(key, val);
                 };
-                None
             }
             &mut Trie::Br(_, _, _, _) => {
                 trace!("b");
-                Some(Self::join(Trie::Lf(key, val), self.clone()))
+                *self = self.clone().join(Trie::Lf(key, val));
             }
         };
         // debug!("#inserted: {:?}", new);
-        if let Some(new) = new {
-            *self = new
-        }
     }
 
     fn del(&self, key: &u64) -> (Self, Option<T>) {
@@ -107,16 +103,16 @@ impl<T: Clone + fmt::Debug> Trie<T> {
         bb
     }
 
-    fn join(t0: Self, t1: Self) -> Self {
-        // debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, t0, p1, t1);
-        let p0 = t0.prefix();
+    fn join(self, t1: Self) -> Self {
+        // debug!("join:{:#b}:{:?}; {:#b}:{:?}", p0, self, p1, t1);
+        let p0 = self.prefix();
         let p1 = t1.prefix();
         let m = Self::branch_bit(p0, p1);
         // debug!("join branch mask:{:?}; samep: {:?}", m, Self::zerobit(p0, m));
         let ret = if Self::zerobit(p0, m) {
-            Self::br(Self::mask(p0, m), m, Box::new(t0), Box::new(t1))
+            Self::br(Self::mask(p0, m), m, Box::new(self), Box::new(t1))
         } else {
-            Self::br(Self::mask(p0, m), m, Box::new(t1), Box::new(t0))
+            Self::br(Self::mask(p0, m), m, Box::new(t1), Box::new(self))
         };
 
         // debug!("join: => {:?}", ret );
