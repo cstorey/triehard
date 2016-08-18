@@ -129,17 +129,35 @@ impl<T: fmt::Debug> Trie<T> {
             &mut Trie::Br(p, m, ref mut l, ref mut r) if Self::match_prefix(*key, p, m) => {
                 let leftp = Self::zerobit(*key, m);
                 // debug!("zerobit({:#b}, {:#b}) => {:?}; branch:{:?}", key, m, leftp, if leftp { l } else { r });
-                let removed = if leftp {
+                if leftp {
                     l.del(key)
                 } else {
                     r.del(key)
-                };
-                removed
+                }
             }
             &mut Trie::Br(_, _, _, _) => None,
         };
         // debug!("#delerted: {:?}", new);
+        if let Some(_) = removed {
+            self.canonify();
+        }
         removed
+    }
+
+    fn canonify(&mut self) {
+        let t = mem::replace(self, Trie::Empty);
+        let new = match t {
+            Trie::Br(p, m, l, r) => {
+                match (*l, *r) {
+                    (Trie::Empty, Trie::Empty) => (Trie::Empty),
+                    (Trie::Empty, r) => (r),
+                    (l, Trie::Empty) => (l),
+                    (l, r) => (Trie::Br(p, m, Box::new(l), Box::new(r))),
+                }
+            }
+            val => (val),
+        };
+        *self = new;
     }
 }
 
