@@ -13,7 +13,7 @@ pub trait Dict<T> {
     fn lookup(&self, key: &Self::K) -> Option<&T>;
 }
 
-#[derive(Clone,Debug,PartialOrd,Ord,PartialEq,Eq)]
+#[derive(Clone,Debug,PartialOrd,Ord,PartialEq,Eq,Hash)]
 pub enum Trie<T> {
     Empty,
     // Key * T
@@ -198,8 +198,10 @@ impl<T: Clone + fmt::Debug> Dict<T> for Trie<T> {
 mod tests {
     extern crate quickcheck;
     extern crate env_logger;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use super::{Trie, Dict};
+    use self::quickcheck::TestResult;
+    use std::hash::{SipHasher, Hash, Hasher};
 
     #[test]
     fn it_works() {
@@ -248,5 +250,77 @@ mod tests {
             assert_eq!((res, ours), (mres, theirs));
         }
         quickcheck::quickcheck(prop_works as fn(Vec<(u64, u64)>, Vec<u64>, u64) -> ());
+    }
+
+    #[test]
+    fn canonical_under_permutation() {
+        env_logger::init().unwrap_or(());
+        fn prop_works(insert: Vec<u64>, swaps: Vec<(usize, usize)>) -> TestResult {
+            if insert.len() == 0 {
+                return TestResult::discard();
+            }
+            println!("{:?}", (&insert, &swaps));
+            let mut permuted = insert.clone();
+            let len = permuted.len();
+            for (a, b) in swaps {
+                permuted.swap(a % len, b % len);
+            }
+            if insert == permuted {
+                return TestResult::discard();
+            }
+            println!("insert: {:?}; permuted: {:?}", insert, permuted);
+            let mut a = Trie::empty();
+            for k in insert {
+                a.insert(k, k);
+            }
+            let mut b = Trie::empty();
+            for k in permuted {
+                b.insert(k, k);
+            }
+            println!("orig-order: {:?}; permuted-order: {:?}", a, b);
+            println!("eq? {:?}", a == b);
+            println!("");
+            assert_eq!(a, b);
+            assert_eq!(hash(&a), hash(&b));
+            TestResult::from_bool(a == b)
+        }
+        quickcheck::quickcheck(prop_works as fn(Vec<u64>, Vec<(usize, usize)>) -> TestResult);
+    }
+
+    #[test]
+    fn canonical_under_removal() {
+        env_logger::init().unwrap_or(());
+        fn prop_works(insert: Vec<u64>, removals: BTreeSet<u64>) -> TestResult {
+            debug!("{:?}", (&insert, &removals));
+            let mut a = Trie::empty();
+            let mut b = Trie::empty();
+
+            for k in insert.iter().filter(|v| !removals.contains(v)) {
+                a.insert(*k, *k);
+            }
+            debug!("no-add: {:?}", a);
+
+            for k in insert.iter() {
+                b.insert(*k, *k);
+            }
+            debug!("all-added: {:?}", b);
+            for r in removals {
+                b.remove(&r);
+            }
+            debug!("all-removed: {:?}", b);
+
+            debug!("no-add: {:?}; add+remove: {:?}", a, b);
+            debug!("eq? {:?}", a == b);
+            debug!("");
+            assert_eq!(a, b);
+            assert_eq!(hash(&a), hash(&b));
+            TestResult::from_bool(a == b)
+        }
+        quickcheck::quickcheck(prop_works as fn(Vec<u64>, BTreeSet<u64>) -> TestResult);
+    }
+    fn hash<T: Hash>(val: T) -> u64 {
+        let mut h = SipHasher::new();
+        val.hash(&mut h);
+        h.finish()
     }
 }
